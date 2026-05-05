@@ -1,0 +1,9 @@
+# Compiled executables
+game
+barbarian
+wizard
+rogue
+
+# Object files and debug symbols
+*.o
+*.dSYM/

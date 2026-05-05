@@ -1,12 +1,17 @@
 # Makefile for CECS 326 Lab 2
-# Build all four executables and link against dungeon.o
-# macOS: shm_open/sem_open are in the standard library; no -lrt needed
+# Detects OS: Linux needs -lrt for shm_open/sem_open, macOS doesn't
 
 CC     = gcc
 CFLAGS = -Wall -Wextra -g
-LIBS   = -pthread
 
-# All targets built by default
+# -lrt is part of glibc on Linux but built into the standard lib on macOS
+UNAME := $(shell uname)
+ifeq ($(UNAME), Linux)
+    LIBS = -lrt -pthread
+else
+    LIBS = -pthread
+endif
+
 all: game barbarian wizard rogue
 
 game: game.c dungeon_info.h dungeon_settings.h dungeon.o

@@ -26,5 +26,8 @@ wizard: wizard.c dungeon_info.h dungeon_settings.h
 rogue: rogue.c dungeon_info.h dungeon_settings.h
 	$(CC) $(CFLAGS) rogue.c -o rogue $(LIBS)
 
+run: all
+	./game
+
 clean:
 	rm -f game barbarian wizard rogue

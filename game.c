@@ -1,5 +1,5 @@
 /*
- * game.c - Daksha Arvind
+ * game.c 
  * This is the main launcher for the dungeon game. It sets up shared memory,
  * creates the semaphores for the treasure room, then forks and execs the three
  * character processes (barbarian, wizard, rogue) before handing off to RunDungeon.
@@ -19,8 +19,11 @@
 int main(void)
 {
     // --- Step 1: Set up shared memory ---
-    // shm_open gives us a file descriptor for a named shared memory object.
-    // O_CREAT | O_RDWR creates it if it doesn't exist and opens it for read/write.
+    // Unlink any stale segment left over from a previous crash before creating
+    // a fresh one. Without this, shm_open reuses the old object and memset
+    // may not fully reset it if the size changed or the process died mid-write.
+    shm_unlink(dungeon_shm_name);
+
     int shm_fd = shm_open(dungeon_shm_name, O_CREAT | O_RDWR, 0666);
     if (shm_fd == -1) {
         perror("shm_open");

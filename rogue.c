@@ -1,17 +1,10 @@
 /*
  * rogue.c
- * When DUNGEON_SIGNAL arrives: binary-search for the hidden pick angle by
- * reading trap->direction after each guess.
- *
- * Binary search strategy:
- *   lo = 0, hi = MAX_PICK_ANGLE, mid = (lo+hi)/2
- *   Write mid into rogue->pick, then wait for direction != 't':
- *     'd' -> target is lower  -> hi = mid
- *     'u' -> target is higher -> lo = mid
- *     '-' -> found (within LOCK_THRESHOLD), stop
- *
- * SEMAPHORE_SIGNAL: wait until both levers are held, then collect the
- * treasure one byte at a time and copy all four into dungeon->spoils.
+ * The rogue picks locks using binary search and collects treasure using semaphores.
+ * On DUNGEON_SIGNAL: guess the hidden pick angle by reading trap->direction
+ * after each guess and adjusting the range up or down accordingly.
+ * On SEMAPHORE_SIGNAL: wait for both levers to be held, then collect all
+ * 4 treasure characters into dungeon->spoils one at a time.
  */
 
 #include <stdio.h>
@@ -24,49 +17,50 @@
 #include <semaphore.h>
 #include "dungeon_info.h"
 
+// Global shared memory pointer set in main, used by both signal handlers
 static struct Dungeon *dungeon = NULL;
 
-/* ------------------------------------------------------------------ */
-/* Signal handlers                                                      */
-/* ------------------------------------------------------------------ */
-
+// DUNGEON_SIGNAL handler: binary search for the correct pick angle
 static void handle_dungeon_signal(int sig)
 {
     (void)sig;
     if (dungeon == NULL) return;
 
+    // Start binary search with full range
     float lo  = 0.0f;
     float hi  = (float)MAX_PICK_ANGLE;
     float mid = (lo + hi) / 2.0f;
 
-    /* Initialise pick and mark direction so we can detect the first reply */
+    // Set 't' as a sentinel so we know when the dungeon has responded
+    // to our pick value. Without this it's hard to tell if direction
+    // is stale from a previous round.
     dungeon->trap.direction = 't';
     dungeon->rogue.pick     = mid;
 
     printf("[rogue] Starting binary search...\n");
 
-    /* Loop until the dungeon signals success ('-') or time runs out */
     while (dungeon->trap.direction != '-' && dungeon->running) {
 
-        /* Wait for the dungeon to respond to our latest pick value */
+        // Spin until the dungeon updates direction away from our sentinel
         while (dungeon->trap.direction == 't' && dungeon->running) {
             usleep(TIME_BETWEEN_ROGUE_TICKS);
         }
 
         char dir = dungeon->trap.direction;
-        if (dir == '-') break;          /* lock opened */
+        if (dir == '-') break; // lock is within threshold, we're done
 
         if (dir == 'd') {
-            /* Target is below current pick */
+            // Dungeon says go lower, shrink upper bound
             hi = mid;
         } else if (dir == 'u') {
-            /* Target is above current pick */
+            // Dungeon says go higher, raise lower bound
             lo = mid;
         }
 
+        // New midpoint for next guess
         mid = (lo + hi) / 2.0f;
 
-        /* Mark 't' so we can detect when the dungeon has responded again */
+        // Reset sentinel before writing new pick so we can detect the next reply
         dungeon->trap.direction = 't';
         dungeon->rogue.pick     = mid;
 
@@ -77,17 +71,16 @@ static void handle_dungeon_signal(int sig)
 }
 
 /*
- * SEMAPHORE_SIGNAL: collect treasure from dungeon->treasure one character at
- * a time and accumulate in dungeon->spoils. The dungeon fills treasure[0..3]
- * with pauses between each character, and the field is NOT null-terminated,
- * so we track how many bytes we have read manually.
+ * SEMAPHORE_SIGNAL handler: collect treasure once both levers are held.
+ * dungeon->treasure is NOT null-terminated so we read exactly 4 bytes.
+ * The dungeon adds them one at a time with pauses, so we wait for each.
  */
 static void handle_semaphore_signal(int sig)
 {
     (void)sig;
     printf("[rogue] Entering treasure room...\n");
 
-    /* Open both levers; the dungeon opened them for us */
+    // Open both named semaphores created in game.c
     sem_t *lever_one = sem_open(dungeon_lever_one, 0);
     sem_t *lever_two = sem_open(dungeon_lever_two, 0);
 
@@ -96,17 +89,16 @@ static void handle_semaphore_signal(int sig)
         return;
     }
 
-    /* Block until both levers are held (both semaphore values become >= 1) */
+    // Block here until both barbarian and wizard have posted their levers
     sem_wait(lever_one);
     sem_wait(lever_two);
 
     printf("[rogue] Door is open, collecting treasure...\n");
 
-    /* Collect all four treasure bytes, waiting for each to appear */
+    // Read each treasure character as it appears - dungeon fills them with delays
     for (int i = 0; i < 4; i++) {
-        /* The dungeon adds characters with pauses; wait for a non-null byte */
         while (dungeon->treasure[i] == '\0' && dungeon->running) {
-            usleep(5000);
+            usleep(5000); // poll every 5ms waiting for next character
         }
         dungeon->spoils[i] = dungeon->treasure[i];
         printf("[rogue] Spoil[%d] = '%c'\n", i, dungeon->spoils[i]);
@@ -114,18 +106,14 @@ static void handle_semaphore_signal(int sig)
 
     printf("[rogue] All treasure collected: %.4s\n", dungeon->spoils);
 
-    /* The lever holders watch spoils[] and will post their semaphores
-     * once they see all four bytes; just close our handles here. */
+    // Barbarian and wizard will see spoils is full and release their levers
     sem_close(lever_one);
     sem_close(lever_two);
 }
 
-/* ------------------------------------------------------------------ */
-/* main                                                                 */
-/* ------------------------------------------------------------------ */
-
 int main(void)
 {
+    // Open the shared memory segment created by game.c
     int shm_fd = shm_open(dungeon_shm_name, O_RDWR, 0666);
     if (shm_fd == -1) {
         perror("[rogue] shm_open");
@@ -143,6 +131,7 @@ int main(void)
 
     printf("[rogue] Ready. PID=%d\n", getpid());
 
+    // SA_RESTART ensures sleep/usleep resume after signal is handled
     struct sigaction sa_dungeon = {0};
     sa_dungeon.sa_handler = handle_dungeon_signal;
     sa_dungeon.sa_flags   = SA_RESTART;
@@ -155,6 +144,7 @@ int main(void)
     sigemptyset(&sa_sem.sa_mask);
     sigaction(SEMAPHORE_SIGNAL, &sa_sem, NULL);
 
+    // Stay alive until the dungeon finishes
     while (dungeon->running) {
         sleep(1);
     }

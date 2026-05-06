@@ -82,10 +82,11 @@ static void handle_semaphore_signal(int sig)
         return;
     }
 
-    // Post to signal that this lever is being held
-    sem_post(lever);
+    // sem_wait decrements the lever from 1 to 0, "holding it down".
+    // The dungeon checks the value is 0 to confirm this lever is held.
+    sem_wait(lever);
 
-    // Wait until the rogue fills all 4 spoils characters before releasing
+    // Keep holding until the rogue has all 4 spoils characters
     while (dungeon->running) {
         if (dungeon->spoils[0] != '\0' &&
             dungeon->spoils[1] != '\0' &&
@@ -96,7 +97,7 @@ static void handle_semaphore_signal(int sig)
         usleep(5000);
     }
 
-    // Release the lever now that the rogue is out
+    // sem_post increments back to 1, releasing the lever
     sem_post(lever);
     sem_close(lever);
     printf("[wizard] Released lever two.\n");

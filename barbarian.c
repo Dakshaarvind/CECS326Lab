@@ -45,8 +45,9 @@ static void handle_semaphore_signal(int sig)
         return;
     }
 
-    // Posting increments the semaphore value, signaling the lever is held
-    sem_post(lever);
+    // sem_wait decrements the lever from 1 to 0, "holding it down".
+    // The dungeon checks the value is 0 to confirm this lever is held.
+    sem_wait(lever);
 
     // Keep holding until the rogue has copied all 4 treasure characters into spoils
     while (dungeon->running) {
@@ -59,7 +60,7 @@ static void handle_semaphore_signal(int sig)
         usleep(5000); // check every 5ms so we don't busy-wait
     }
 
-    // Post again to release the door so the dungeon can continue
+    // sem_post increments back to 1, releasing the lever
     sem_post(lever);
     sem_close(lever);
     printf("[barbarian] Released lever one.\n");

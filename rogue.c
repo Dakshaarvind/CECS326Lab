@@ -80,18 +80,15 @@ static void handle_semaphore_signal(int sig)
     (void)sig;
     printf("[rogue] Entering treasure room...\n");
 
-    // Open both named semaphores created in game.c
-    sem_t *lever_one = sem_open(dungeon_lever_one, 0);
-    sem_t *lever_two = sem_open(dungeon_lever_two, 0);
+    // The rogue doesn't touch the levers — barbarian and wizard hold them.
+    // The dungeon opens the treasure room once both levers are down (value 0).
+    // Rogue just waits for treasure characters to appear in shared memory.
+    printf("[rogue] Waiting for door to open...\n");
 
-    if (lever_one == SEM_FAILED || lever_two == SEM_FAILED) {
-        perror("[rogue] sem_open levers");
-        return;
+    // Poll until the dungeon fills the first treasure byte, meaning the door is open
+    while (dungeon->treasure[0] == '\0' && dungeon->running) {
+        usleep(5000);
     }
-
-    // Block here until both barbarian and wizard have posted their levers
-    sem_wait(lever_one);
-    sem_wait(lever_two);
 
     printf("[rogue] Door is open, collecting treasure...\n");
 
@@ -105,10 +102,6 @@ static void handle_semaphore_signal(int sig)
     }
 
     printf("[rogue] All treasure collected: %.4s\n", dungeon->spoils);
-
-    // Barbarian and wizard will see spoils is full and release their levers
-    sem_close(lever_one);
-    sem_close(lever_two);
 }
 
 int main(void)

@@ -57,15 +57,16 @@ int main(void)
     sem_unlink(dungeon_lever_one);
     sem_unlink(dungeon_lever_two);
 
-    // Initial value of 0 means the levers start "not held" —
-    // the barbarian and wizard will post to them when they receive SEMAPHORE_SIGNAL
-    sem_t *lever_one = sem_open(dungeon_lever_one, O_CREAT | O_EXCL, 0666, 0);
+    // Initial value of 1 means the lever is "up" (not held).
+    // Barbarian and wizard will call sem_wait to pull it down to 0 (holding it).
+    // The dungeon checks the value is 0 to confirm the lever is being held.
+    sem_t *lever_one = sem_open(dungeon_lever_one, O_CREAT | O_EXCL, 0666, 1);
     if (lever_one == SEM_FAILED) {
         perror("sem_open lever_one");
         exit(EXIT_FAILURE);
     }
 
-    sem_t *lever_two = sem_open(dungeon_lever_two, O_CREAT | O_EXCL, 0666, 0);
+    sem_t *lever_two = sem_open(dungeon_lever_two, O_CREAT | O_EXCL, 0666, 1);
     if (lever_two == SEM_FAILED) {
         perror("sem_open lever_two");
         exit(EXIT_FAILURE);
